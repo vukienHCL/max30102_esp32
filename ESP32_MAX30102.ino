@@ -1,3 +1,9 @@
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <BLEScan.h>
+#include <BLEAdvertisedDevice.h>
 #include <Wire.h>
 #include "MAX30105.h" 
 #include <Adafruit_GFX.h>
@@ -7,10 +13,19 @@
 #define OLED_RESET 0
 Adafruit_SSD1306 display(OLED_RESET);
 MAX30105 particleSensor;
+
 #define fSpO2 0.7 //filter factor for estimated SpO2
 #define fRate 0.95 //low pass filter for IR/red LED value to eliminate AC component
 #define fbpmrate 0.95 // low pass filter coefficient for HRM in bpm
 #define firrate 0.85 //IR filter coefficient to remove notch , should be smaller than fRate
+//BLE server name
+#define bleServerName "MAX30102_ESP32"
+#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+bool deviceConnected = false;
+
+BLECharacteristic HumidityCharacteristics("ca73b3ba-39f6-4ab3-91ae-186dc9577d99", BLECharacteristic::PROPERTY_NOTIFY);
+BLEDescriptor HumidityDescriptor(BLEUUID((uint16_t)0x2902));
+
 float aveRed = 0;//DC component of RED signal
 float aveIr = 0;//DC component of IR signal
 float sumIrRMS = 0; //sum of IR square
@@ -19,8 +34,19 @@ unsigned int counter = 0; //loop counter
 float eSpO2 = 95.0;//initial value of estimated SpO2
 float Ebpm;//estimated Heart Rate (bpm)
 byte validData; 
-float Ebpm_Ar[5];
-float eSpO2_Ar[5];
+//Setup callbacks onConnect and onDisconnect
+class MyServerCallbacks: public BLEServerCallbacks 
+{
+  void onConnect(BLEServer* pServer) 
+  {
+    deviceConnected = true; 
+  };
+  void onDisconnect(BLEServer* pServer) 
+  {
+    deviceConnected = false;
+    ESP.restart();
+  }
+};
 void initMAX30102() 
 {
   byte  ledBrightness = 0x7F;   //Options: 0=Off to 255=50mA
@@ -35,6 +61,33 @@ void initMAX30102()
   }
   particleSensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange); //Configure sensor with these settings
 }
+void initBLE()
+{
+    // Create the BLE Device
+  BLEDevice::init(bleServerName);
+  // Create the BLE Server
+  BLEServer *pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
+
+  // Create the BLE Service
+  BLEService *max30102Service = pServer->createService(SERVICE_UUID);
+
+  // Create BLE Characteristics and Create a BLE Descriptor
+
+  // Humidity
+  max30102Service->addCharacteristic(&HumidityCharacteristics);
+  HumidityDescriptor.setValue("BME humidity");
+  HumidityCharacteristics.addDescriptor(new BLE2902());
+
+  
+  // Start the service
+  max30102Service->start();
+
+  // Start advertising
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pServer->getAdvertising()->start();
+}
 void setup()
 {
   // Start serial communication 
@@ -42,6 +95,7 @@ void setup()
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   // Init BME Sensor
   initMAX30102();
+  initBLE();
 }
 float HRM_estimator(float fir ,float aveIr)
 {
@@ -91,15 +145,11 @@ void measure()
         if ( ir < 50000)
         {
           validData=0;
+          eSpO2=80;          
         }
         else
         {
           validData=1;    
-          for(int i=0;i<5;i++)
-          {
-            Ebpm_Ar[i]=Ebpm;
-            eSpO2_Ar[i]=eSpO2;
-          } 
         }
       }
     }
@@ -126,23 +176,9 @@ void display_human_data()
   { 
     display.println("Human data");
     display.setCursor(0,16);
-    display.printf("BPM=%0.2f",Ebpm);
+    display.printf("%0.2f",Ebpm);
     display.setCursor(0,24);
-    display.printf("Spo2=%0.2f",eSpO2);
-    char humidity[72]={'\0'};
-    char h1[35];
-    char h2[35];
-    char s[2]={0x5f, 0x5f};
-    char *loc1 = h1;
-    char *loc2 = h2;
-    floatToString(Ebpm_Ar,loc1);
-    floatToString(eSpO2_Ar,loc2);
-    strncat(humidity,h1,35);
-    strncat(humidity,s,2);
-    strncat(humidity,h2,35);
-//    Serial.printf("%s\r\n",h1);
-//    Serial.printf("%s\r\n",h2);
-    Serial.printf("%s\r\n",humidity);
+    display.printf("%0.2f",eSpO2);
   }
   else
   {
@@ -153,20 +189,35 @@ void display_human_data()
   display.display();
   display.clearDisplay();   
 }
-void floatToString(float testFloats[5], char *loc)
+void mergeData()
 {
-    char testBuffer[255] = {'\0'};
-    size_t testBufferSpace = 255;
-    size_t tempLen;
-    for(int i = 0; i < 5; ++i)
-    {
-        snprintf(loc, testBufferSpace, "%0.1f ", testFloats[i]);
-        tempLen = strlen(loc);
-        loc += tempLen;
-    }
+  char humidity[16]={'\0'};
+  char h1[7];
+  char h2[7];
+  char s[2]={0x5f, 0x5f};
+  Serial.printf("%0.2f\r\n",Ebpm);  
+  dtostrf(Ebpm, 6, 1, h1);    
+  dtostrf(eSpO2, 6, 1, h2);   
+  strncat(humidity,h1,35);
+  strncat(humidity,s,2);
+  strncat(humidity,h2,35);
+  HumidityCharacteristics.setValue(humidity);
+  HumidityCharacteristics.notify();
 }
 void loop()
 {
   measure();
   display_human_data();
+  if (deviceConnected) 
+  {
+    if (!validData)
+    {
+      HumidityCharacteristics.setValue("No finger");
+      HumidityCharacteristics.notify();
+    }
+    else
+    {
+      mergeData();
+    }
+  }
 }
