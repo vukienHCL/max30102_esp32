@@ -21,7 +21,8 @@ MAX30105 particleSensor;
 #define firrate 0.85 //IR filter coefficient to remove notch , should be smaller than fRate
 //BLE server name
 #define bleServerName "MAX30102_ESP32"
-#define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define SERVICE_UUID     "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define btnSERVICE_UUID "22b90e85-4df1-4a4e-9716-c25245707547"
 bool deviceConnected = false;
 
 BLECharacteristic HumidityCharacteristics("ca73b3ba-39f6-4ab3-91ae-186dc9577d99", BLECharacteristic::PROPERTY_NOTIFY);
@@ -89,6 +90,7 @@ void initBLE()
   // Create the BLE Service
   BLEService *max30102Service = pServer->createService(SERVICE_UUID);
 
+  BLEService *max30102btnService = pServer->createService(btnSERVICE_UUID);
   // Create BLE Characteristics and Create a BLE Descriptor
 
   // Humidity
@@ -97,16 +99,17 @@ void initBLE()
   HumidityCharacteristics.addDescriptor(new BLE2902());
 
  // Spo2
-  max30102Service->addCharacteristic(&ButtonCharacteristics);
+  max30102btnService->addCharacteristic(&ButtonCharacteristics);
   ButtonDescriptor.setValue("spo2");
   ButtonCharacteristics.addDescriptor(new BLE2902());
   ButtonCharacteristics.setCallbacks(new MyCallbacks());
   // Start the service
   max30102Service->start();
-
+  max30102btnService->start();
   // Start advertising
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->addServiceUUID(btnSERVICE_UUID);
   pServer->getAdvertising()->start();
 }
 void setup()
