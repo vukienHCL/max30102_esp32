@@ -36,8 +36,8 @@ public:
                               const QByteArray &value);
     void confirmedBtnDescriptorWrite(const QLowEnergyDescriptor &d,
                               const QByteArray &value);
-    //void writeBtnCharacteristic(const QByteArray &value);
-    //void confirmedCharacteristicWrite(const QLowEnergyCharacteristic &c,
+    void writeBtnCharacteristic(const QByteArray &value);
+    void confirmedCharacteristicWrite(const QLowEnergyCharacteristic &c,
                               const QByteArray &value);
     std::string getHumData();
     std::string removeString(std::string m_string, std::string oldStr, std::string newStr){
@@ -91,7 +91,7 @@ signals:
     void scanActionChanged();
     void displayBusyIndicatorChanged();
     void measuringChanged(const QString &value);
-    //void requestWrite(const QString &value);
+    void requestWrite(QString value);
 
 public slots:
     void addDevice(const QBluetoothDeviceInfo &info);

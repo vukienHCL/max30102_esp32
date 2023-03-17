@@ -265,15 +265,15 @@ void Device::serviceScanDone()
         connect(m_service, &QLowEnergyService::characteristicChanged, this, &Device::updateHeartRateValue);
         connect(m_service, &QLowEnergyService::descriptorWritten, this, &Device::confirmedDescriptorWrite);
         m_service->discoverDetails();
-        qDebug() << "Hr Servivce connect done.";
+        qDebug() << "Hr Service connect done.";
     } 
     else if(n_service)
     {
     	connect(n_service, &QLowEnergyService::stateChanged, this, &Device::btnServiceStateChanged);
         connect(n_service, &QLowEnergyService::characteristicChanged, this, &Device::updateBtnValue);
         connect(n_service, &QLowEnergyService::descriptorWritten, this, &Device::confirmedBtnDescriptorWrite);
-        //connect(n_service, &QLowEnergyService::characteristicWritten, this, &DeviceHandler::confirmedCharacteristicWrite);
-        //connect(n_service, &Device::requestWrite,this, &Device::writeBtnCharacteristic);
+        connect(n_service, &Device::requestWrite,this, &Device::writeBtnCharacteristic);
+        connect(n_service, &QLowEnergyService::characteristicWritten, this, &DeviceHandler::confirmedCharacteristicWrite);
         n_service->discoverDetails();
     }
     else 
@@ -357,8 +357,10 @@ void Device::confirmedBtnDescriptorWrite(const QLowEnergyDescriptor &d, const QB
 {
     qDebug("confirmedBtnDescriptorWrite");
 }
-void Device::confirmedCharacteristicWrite(const QLowEnergyCharacteristic &c, const QByteArray &value);
-/*
+void Device::confirmedCharacteristicWrite(const QLowEnergyCharacteristic &c, const QByteArray &value)
+{
+    qDebug("confirmedCharacteristicWrite");
+}
 void Device::writeBtnCharacteristic(const QByteArray &value)
 {
     qDebug() << "Device::writeBtnCharacteristic: " << value;
@@ -366,7 +368,7 @@ void Device::writeBtnCharacteristic(const QByteArray &value)
     {
         n_service->writeCharacteristic(btnCharacteristic, value, QLowEnergyService::WriteMode);
     }
-    //emit requestWrite();
+    //emit requestWrite("I have finished my task);
 }
 */
 std::string Device::getHumData()
