@@ -18,9 +18,23 @@ Device::Device()
     connect(discoveryAgent, &QBluetoothDeviceDiscoveryAgent::finished, this, &Device::deviceScanFinished);
 }
 
+Device::~Device()
+{
+    delete controller;
+    qDeleteAll(devices);
+    qDeleteAll(mConnectDevices);
+    devices.clear();
+    mConnectDevices.clear();
+}
+
 QVariant Device::getDeviceList(void)
 {
-    return QVariant::fromValue(mDevices);
+    return QVariant::fromValue(devices);
+}
+
+QVariant Device::getConnectDeviceList()
+{
+    return QVariant::fromValue(mConnectDevices);
 }
 
 void Device::scan()
@@ -173,13 +187,14 @@ void Device::disconnectDevice(const QString &address)
 
 void Device::addDevice(const QBluetoothDeviceInfo &info)
 {
+    // Just care about BLE device
     if (info.coreConfigurations() & QBluetoothDeviceInfo::LowEnergyCoreConfiguration)
     {
-        qDebug() << "Found name    device: " << info.name();
-        qDebug() << "Found address device: " << info.address().toString();
+        // Just care about named BLE device (noname BLE device will by pass)
         if (info.name().remove('-') != info.address().toString().remove(':'))
         {
-            mDevices.append(new DeviceInfo(info));
+            qDebug() << "Found new device: " << info.name() << ", address: " << info.address().toString();
+            devices.append(new DeviceInfo(info));
             emit deviceListChanged();
         }
 
@@ -188,21 +203,36 @@ void Device::addDevice(const QBluetoothDeviceInfo &info)
 
 void Device::deviceScanError(QBluetoothDeviceDiscoveryAgent::Error)
 {
-    qDebug() << "Error BLE";
+    setDisplayBusyIndicator(false);
+    qDebug() << "Scan BLE error";
 }
 
 void Device::deviceScanFinished()
 {
-//    const QList<QBluetoothDeviceInfo> foundDevices = discoveryAgent->discoveredDevices();
-//    for (auto nextDevice : foundDevices)
-//    {
-//        if (nextDevice.coreConfigurations() & QBluetoothDeviceInfo::LowEnergyCoreConfiguration)
-//        {
-//            mDevices.append(new DeviceInfo(nextDevice));
-//        }
-//    }
+    qDebug() << "Stop scan BLE";
+    setScanAction("SCAN");
+    setDisplayBusyIndicator(false);
+}
 
-//    emit deviceListChanged();
+void Device::deviceConnected()
+{
+    setDisplayBusyIndicator(false);
+    qDebug() << currentDevice.getName() << " connected";
+
+    // If device is connected, add it to connect device list
+    DeviceInfo *obj = new DeviceInfo();
+    obj->setDevice(currentDevice.getDevice());
+    mConnectDevices.append(obj);
+    emit connectDeviceListChanged();
+
+    for (auto d: qAsConst(devices)) {
+        if (auto device = qobject_cast<DeviceInfo *>(d)) {
+            if (device->getAddress() == currentDevice.getAddress() ) {
+                devices.removeOne(device);
+                break;
+            }
+        }
+    }
 
 
 
@@ -220,8 +250,21 @@ void Device::deviceDisconnected()
 {
     listController.removeOne(controller);
     setDisplayBusyIndicator(false);
+    qDebug() << currentDevice.getName() << " disconnected";
+    for (auto d: qAsConst(mConnectDevices)) {
+        if (auto device = qobject_cast<DeviceInfo *>(d)) {
+            if (device->getAddress() == currentDevice.getAddress() ) {
+                mConnectDevices.removeOne(device);
+                break;
+            }
+        }
+    }
+
+    emit connectDeviceListChanged();
 }
 
+
+///
 void Device::serviceDiscovered(const QBluetoothUuid &gatt)
 {
     qDebug() << "GATT:" << gatt.toString();
@@ -229,14 +272,10 @@ void Device::serviceDiscovered(const QBluetoothUuid &gatt)
         qDebug() << "Heart Rate service discovered. Waiting for service scan to be done...";
         m_foundHeartRateService = true;
     }
-    else if (gatt.toString() == btnService)
+    if (gatt.toString() == btnService)
     {
-    	qDebug() << "Button service discovered. Waiting for service scan to be done...";
-    	m_foundBtnService = true;
-    }
-    else
-    {
-    	qDebug() << "not found service ";
+        qDebug() << "Button service discovered. Waiting for service scan to be done...";
+        m_foundBtnService = true;
     }
 }
 
@@ -249,36 +288,30 @@ void Device::serviceScanDone()
         delete m_service;
         m_service = nullptr;
     }
-     if (n_service) {
-        delete n_service;
-        n_service = nullptr;
-    }
+    if (n_service) {
+       delete n_service;
+       n_service = nullptr;
+   }
+
 //! [Filter HeartRate service 2]
     // If heartRateService found, create new service
     if (m_foundHeartRateService)
         m_service = controller->createServiceObject(QBluetoothUuid(heartRateService), this);
     if (m_foundBtnService)
-    	n_service = controller->createServiceObject(QBluetoothUuid(btnService), this);	
-    if (m_service) 
-    {
+            n_service = controller->createServiceObject(QBluetoothUuid(btnService), this);
+    if (m_service) {
         connect(m_service, &QLowEnergyService::stateChanged, this, &Device::serviceStateChanged);
         connect(m_service, &QLowEnergyService::characteristicChanged, this, &Device::updateHeartRateValue);
         connect(m_service, &QLowEnergyService::descriptorWritten, this, &Device::confirmedDescriptorWrite);
         m_service->discoverDetails();
-        qDebug() << "Hr Service connect done.";
-    } 
-    else if(n_service)
-    {
-    	connect(n_service, &QLowEnergyService::stateChanged, this, &Device::btnServiceStateChanged);
-        connect(n_service, &QLowEnergyService::characteristicChanged, this, &Device::updateBtnValue);
-        connect(n_service, &QLowEnergyService::descriptorWritten, this, &Device::confirmedBtnDescriptorWrite);
-        connect(n_service, &Device::requestWrite,this, &Device::writeBtnCharacteristic);
-        connect(n_service, &QLowEnergyService::characteristicWritten, this, &DeviceHandler::confirmedCharacteristicWrite);
-        n_service->discoverDetails();
     }
-    else 
+    if (n_service)
     {
-        setError("Service not found.");
+         connect(n_service, &QLowEnergyService::stateChanged, this, &Device::btnServiceStateChanged);
+         connect(n_service, &QLowEnergyService::characteristicChanged, this, &Device::updateBtnValue);
+         connect(n_service, &QLowEnergyService::descriptorWritten, this, &Device::confirmedBtnDescriptorWrite);
+         connect(n_service, &QLowEnergyService::characteristicWritten, this, &Device::confirmedCharacteristicWrite);
+         n_service->discoverDetails();
     }
 //! [Filter HeartRate service 2]
 }
@@ -303,6 +336,7 @@ void Device::serviceStateChanged(QLowEnergyService::ServiceState s)
 
             qDebug("Hr data found");
         }
+
         m_notificationDesc = hrChar.descriptor(QBluetoothUuid::ClientCharacteristicConfiguration);
         if (m_notificationDesc.isValid())
             m_service->writeDescriptor(m_notificationDesc, QByteArray::fromHex("0100"));
@@ -326,19 +360,20 @@ void Device::btnServiceStateChanged(QLowEnergyService::ServiceState s)
     {
         qDebug("Service discovered.");
 
-        const QLowEnergyCharacteristic btnChar = n_service>characteristic(QBluetoothUuid(btnCharecteristic));
+        const QLowEnergyCharacteristic btnChar = n_service->characteristic(QBluetoothUuid(btnCharecteristic));
         if (!btnChar.isValid()) {
             qDebug("Btn Data not found.");
+            n_service->writeCharacteristic(btnChar, QByteArray::fromHex("0"), QLowEnergyService::WriteWithResponse);
             break;
         }
         else
         {
-            qDebug("Btn data found");
+            qDebug("btn data found");
         }
 
         n_notificationDesc = btnChar.descriptor(QBluetoothUuid::ClientCharacteristicConfiguration);
         if (n_notificationDesc.isValid())
-            n_service->writeDescriptor(n_notificationDesc, QByteArray::fromHex("0200"));
+            n_service->writeDescriptor(n_notificationDesc, QByteArray::fromHex("0100"));
 
         break;
     }
@@ -361,21 +396,18 @@ void Device::confirmedCharacteristicWrite(const QLowEnergyCharacteristic &c, con
 {
     qDebug("confirmedCharacteristicWrite");
 }
-void Device::writeBtnCharacteristic(const QByteArray &value)
+void Device::writeBtnCharacteristic(const QLowEnergyCharacteristic &c, const QByteArray &value)
 {
-    qDebug() << "Device::writeBtnCharacteristic: " << value;
-    if(n_service && btnCharacteristic.isValid())
-    {
-        n_service->writeCharacteristic(btnCharacteristic, value, QLowEnergyService::WriteMode);
-    }
-    //emit requestWrite("I have finished my task);
+    qDebug() << "Device::writeBtnCharacteristic: " << value;
+    if(n_service)
+    {
+        n_service->writeCharacteristic(c, value, QLowEnergyService::WriteWithResponse);
+    }
 }
-*/
 std::string Device::getHumData()
 {
     return humdata;
 }
-
 void Device::updateHeartRateValue(const QLowEnergyCharacteristic &c,
                           const QByteArray &value)
 {
@@ -386,7 +418,7 @@ void Device::updateHeartRateValue(const QLowEnergyCharacteristic &c,
         humdata += "__95";
         humdata = removeString(humdata, "___", "__");
     }
-//    qDebug() << "updateHeartRateValue: " << value.toStdString().c_str();
+    qDebug() << "updateHeartRateValue: " << value.toStdString().c_str();
 //    std::cout << "bytes : " << humdata << '\n';
 //    emit measuringChanged(QString(value.toStdString().c_str()));
 
@@ -394,8 +426,8 @@ void Device::updateHeartRateValue(const QLowEnergyCharacteristic &c,
 void Device::updateBtnValue(const QLowEnergyCharacteristic &c,
                           const QByteArray &value)
 {
-    qDebug() << "Button Characteristic UUID: " << c.uuid();
-    qDebug() << "updateBtnValue: " << value.toStdString().c_str();
-//    std::cout << "bytes : " << btndata << '\n';
+    qDebug() << "updateBtnValue: " << value.toStdString().c_str();;
+//    std::cout << "bytes : " << humdata << '\n';
 //    emit measuringChanged(QString(value.toStdString().c_str()));
+
 }

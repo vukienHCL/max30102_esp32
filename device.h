@@ -5,19 +5,22 @@
 #include <QList>
 #include <QVariant>
 #include <QBluetoothDeviceDiscoveryAgent>
+#include <QLowEnergyController>
+#include "deviceinfo.h"
 
 class Device : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QVariant deviceList READ getDeviceList NOTIFY deviceListChanged)
+    Q_PROPERTY(QVariant connectDeviceList READ getConnectDeviceList NOTIFY connectDeviceListChanged)
     Q_PROPERTY(QString scanAction READ getScanAction WRITE setScanAction NOTIFY scanActionChanged)
     Q_PROPERTY(bool displayBusyIndicator READ getDisplayBusyIndicator WRITE setDisplayBusyIndicator NOTIFY displayBusyIndicatorChanged)
 
-//    Q_PROPERTY(int hr READ hr NOTIFY statsChanged)
-
 public:
     Device();
+    ~Device();
     QVariant getDeviceList(void);
+    QVariant getConnectDeviceList(void);
     Q_INVOKABLE void scan(void);
     Q_INVOKABLE void stop(void);
     QString getScanAction(void);
@@ -36,9 +39,8 @@ public:
                               const QByteArray &value);
     void confirmedBtnDescriptorWrite(const QLowEnergyDescriptor &d,
                               const QByteArray &value);
-    void writeBtnCharacteristic(const QByteArray &value);
-    void confirmedCharacteristicWrite(const QLowEnergyCharacteristic &c,
-                              const QByteArray &value);
+    void writeBtnCharacteristic(const QLowEnergyCharacteristic &c, const QByteArray &value);
+    void confirmedCharacteristicWrite(const QLowEnergyCharacteristic &c, const QByteArray &value);
     std::string getHumData();
     std::string removeString(std::string m_string, std::string oldStr, std::string newStr){
         size_t pos = 0;
@@ -73,11 +75,12 @@ private:
     //DeviceHandler *m_deviceHandler;
     bool m_foundHeartRateService;
     QString heartRateService = "{4fafc201-1fb5-459e-8fcc-c5c9c331914b}";
-    QString heartRateCharecteristic = "{ca73b3ba-39f6-4ab3-91ae-186dc9577d99}";
-    
+    QString heartRateCharecteristic = "{ca73b3ba-39f6-4ab3-91ae-186dc9577d99";
+
+    //Button Service Define UUID
     bool m_foundBtnService;
     QString btnService = "{22b90e85-4df1-4a4e-9716-c25245707547}";
-    QString btnCharecteristic = "{f78ebbff-c8b7-4107-93de-889a6a06d408}";
+    QString btnCharecteristic = "{f78ebbff-c8b7-4107-93de-889a6a06d408";
      //QLowEnergyController
     void serviceDiscovered(const QBluetoothUuid &);
     void serviceScanDone();
@@ -88,15 +91,18 @@ private:
 
 signals:
     void deviceListChanged();
+    void connectDeviceListChanged();
     void scanActionChanged();
     void displayBusyIndicatorChanged();
     void measuringChanged(const QString &value);
-    void requestWrite(QString value);
 
 public slots:
     void addDevice(const QBluetoothDeviceInfo &info);
     void deviceScanError(QBluetoothDeviceDiscoveryAgent::Error);
     void deviceScanFinished(void);
+    void deviceConnected();
+    void errorReceived(QLowEnergyController::Error error);
+    void deviceDisconnected();
 
 
 };
