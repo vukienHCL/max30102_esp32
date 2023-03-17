@@ -222,8 +222,6 @@ void Device::deviceDisconnected()
     setDisplayBusyIndicator(false);
 }
 
-
-///
 void Device::serviceDiscovered(const QBluetoothUuid &gatt)
 {
     qDebug() << "GATT:" << gatt.toString();
@@ -231,12 +229,7 @@ void Device::serviceDiscovered(const QBluetoothUuid &gatt)
         qDebug() << "Heart Rate service discovered. Waiting for service scan to be done...";
         m_foundHeartRateService = true;
     }
-    else
-    {
-       qDebug() << "not found service ";
-    }
-    /*
-    if (gatt.toString() == btnService)
+    else if (gatt.toString() == btnService)
     {
     	qDebug() << "Button service discovered. Waiting for service scan to be done...";
     	m_foundBtnService = true;
@@ -245,7 +238,6 @@ void Device::serviceDiscovered(const QBluetoothUuid &gatt)
     {
     	qDebug() << "not found service ";
     }
-    */
 }
 
 void Device::serviceScanDone()
@@ -257,40 +249,37 @@ void Device::serviceScanDone()
         delete m_service;
         m_service = nullptr;
     }
-    /*
      if (n_service) {
         delete n_service;
         n_service = nullptr;
     }
-    */
 //! [Filter HeartRate service 2]
     // If heartRateService found, create new service
     if (m_foundHeartRateService)
         m_service = controller->createServiceObject(QBluetoothUuid(heartRateService), this);
-    /*
     if (m_foundBtnService)
-    	n_service = controller->createServiceObject(QBluetoothUuid(btnService), this);
-    */	
+    	n_service = controller->createServiceObject(QBluetoothUuid(btnService), this);	
     if (m_service) 
     {
         connect(m_service, &QLowEnergyService::stateChanged, this, &Device::serviceStateChanged);
         connect(m_service, &QLowEnergyService::characteristicChanged, this, &Device::updateHeartRateValue);
         connect(m_service, &QLowEnergyService::descriptorWritten, this, &Device::confirmedDescriptorWrite);
         m_service->discoverDetails();
+        qDebug() << "Hr Servivce connect done.";
     } 
-    else 
+    else if(n_service)
     {
-//        setError("Heart Rate Service not found.");
-    }
-    /*
-    if (n_service)
-    {
-        connect(n_service, &QLowEnergyService::stateChanged, this, &Device::btnServiceStateChanged);
+    	connect(n_service, &QLowEnergyService::stateChanged, this, &Device::btnServiceStateChanged);
         connect(n_service, &QLowEnergyService::characteristicChanged, this, &Device::updateBtnValue);
-        connect(n_service, &QLowEnergyService::descriptorWritten, this, &Device::confirmedDescriptorWrite);
+        connect(n_service, &QLowEnergyService::descriptorWritten, this, &Device::confirmedBtnDescriptorWrite);
+        //connect(n_service, &QLowEnergyService::characteristicWritten, this, &DeviceHandler::confirmedCharacteristicWrite);
+        //connect(n_service, &Device::requestWrite,this, &Device::writeBtnCharacteristic);
         n_service->discoverDetails();
     }
-    */
+    else 
+    {
+        setError("Service not found.");
+    }
 //! [Filter HeartRate service 2]
 }
 
@@ -314,7 +303,6 @@ void Device::serviceStateChanged(QLowEnergyService::ServiceState s)
 
             qDebug("Hr data found");
         }
-
         m_notificationDesc = hrChar.descriptor(QBluetoothUuid::ClientCharacteristicConfiguration);
         if (m_notificationDesc.isValid())
             m_service->writeDescriptor(m_notificationDesc, QByteArray::fromHex("0100"));
@@ -328,7 +316,6 @@ void Device::serviceStateChanged(QLowEnergyService::ServiceState s)
 
 //    emit aliveChanged();
 }
-/*
 void Device::btnServiceStateChanged(QLowEnergyService::ServiceState s)
 {
     switch (s) {
@@ -339,20 +326,19 @@ void Device::btnServiceStateChanged(QLowEnergyService::ServiceState s)
     {
         qDebug("Service discovered.");
 
-        const QLowEnergyCharacteristic btnChar = n_service->characteristic(QBluetoothUuid(btnCharecteristic));
+        const QLowEnergyCharacteristic btnChar = n_service>characteristic(QBluetoothUuid(btnCharecteristic));
         if (!btnChar.isValid()) {
             qDebug("Btn Data not found.");
-            n_service->writeCharacteristic(btnChar, QByteArray::fromHex("0"), QLowEnergyService::WriteWithResponse);
             break;
         }
         else
         {
-            qDebug("btn data found");
+            qDebug("Btn data found");
         }
 
         n_notificationDesc = btnChar.descriptor(QBluetoothUuid::ClientCharacteristicConfiguration);
         if (n_notificationDesc.isValid())
-            n_service->writeDescriptor(n_notificationDesc, QByteArray::fromHex("0100"));
+            n_service->writeDescriptor(n_notificationDesc, QByteArray::fromHex("0200"));
 
         break;
     }
@@ -363,22 +349,31 @@ void Device::btnServiceStateChanged(QLowEnergyService::ServiceState s)
 
 //    emit aliveChanged();
 }
-*/
 void Device::confirmedDescriptorWrite(const QLowEnergyDescriptor &d, const QByteArray &value)
 {
     qDebug("confirmedDescriptorWrite");
 }
-
+void Device::confirmedBtnDescriptorWrite(const QLowEnergyDescriptor &d, const QByteArray &value)
+{
+    qDebug("confirmedBtnDescriptorWrite");
+}
+void Device::confirmedCharacteristicWrite(const QLowEnergyCharacteristic &c, const QByteArray &value);
+/*
+void Device::writeBtnCharacteristic(const QByteArray &value)
+{
+    qDebug() << "Device::writeBtnCharacteristic: " << value;
+    if(n_service && btnCharacteristic.isValid())
+    {
+        n_service->writeCharacteristic(btnCharacteristic, value, QLowEnergyService::WriteMode);
+    }
+    //emit requestWrite();
+}
+*/
 std::string Device::getHumData()
 {
     return humdata;
 }
-/*
-std::string Device::getBtnData()
-{
-    return btndata;
-}
-*/
+
 void Device::updateHeartRateValue(const QLowEnergyCharacteristic &c,
                           const QByteArray &value)
 {
@@ -394,17 +389,11 @@ void Device::updateHeartRateValue(const QLowEnergyCharacteristic &c,
 //    emit measuringChanged(QString(value.toStdString().c_str()));
 
 }
-/*
 void Device::updateBtnValue(const QLowEnergyCharacteristic &c,
                           const QByteArray &value)
 {
-    if (strcmp(value.toStdString().c_str(), ""))
-    {
-        btndata = value.toStdString().c_str();
-    }
-//    qDebug() << "updateBtnValue: " << value.toStdString().c_str();
+    qDebug() << "Button Characteristic UUID: " << c.uuid();
+    qDebug() << "updateBtnValue: " << value.toStdString().c_str();
 //    std::cout << "bytes : " << btndata << '\n';
 //    emit measuringChanged(QString(value.toStdString().c_str()));
-
 }
-*/
